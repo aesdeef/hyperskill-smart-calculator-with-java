@@ -1,6 +1,7 @@
 package calculator;
 
 import java.util.Scanner;
+import java.util.regex.Pattern;
 
 public class Main {
     public static void main(String[] args) {
@@ -18,7 +19,19 @@ public class Main {
                     System.exit(0);
                 }
                 default -> {
-                    String[] inputParts = input.split(" ");
+                    // clean up the input
+                    String trimmedInput = input.trim().replaceAll("\\s+", " ");
+                    Pattern consecutiveSigns = Pattern.compile("[+-] ?[+-]");
+                    while (consecutiveSigns.matcher(trimmedInput).find()) {
+                        trimmedInput = trimmedInput.replaceAll("+ ?+", "+");
+                        trimmedInput = trimmedInput.replaceAll("+ ?-", "-");
+                        trimmedInput = trimmedInput.replaceAll("- ?+", "-");
+                        trimmedInput = trimmedInput.replaceAll("- ?-", "+");
+                    }
+                    trimmedInput = trimmedInput.replaceAll("+ ", "+");
+                    trimmedInput = trimmedInput.replaceAll("- ", "-");
+
+                    String[] inputParts = trimmedInput.split(" ");
                     long sum = 0;
                     for (String part : inputParts) {
                         sum += Long.parseLong(part);
