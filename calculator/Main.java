@@ -5,21 +5,27 @@ import java.util.Scanner;
 public class Main {
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
+
         while (true) {
             String input = scanner.nextLine();
-            if (input.equals("/exit")) {
-                break;
-            } else if (input.isEmpty()) {
-                continue;
-            } else if (!input.contains(" ")) {
-                System.out.println(input);
-            } else {
-                String[] inputParts = input.split(" ");
-                int first = Integer.parseInt(inputParts[0]);
-                int second = Integer.parseInt(inputParts[1]);
-                System.out.println(first + second);
+            switch (input) {
+                case "" -> {
+                    // do nothing
+                }
+                case "/help" -> System.out.println("The program calculates the sum of numbers");
+                case "/exit" -> {
+                    System.out.println("Bye!");
+                    System.exit(0);
+                }
+                default -> {
+                    String[] inputParts = input.split(" ");
+                    long sum = 0;
+                    for (String part : inputParts) {
+                        sum += Long.parseLong(part);
+                    }
+                    System.out.println(sum);
+                }
             }
         }
-        System.out.println("Bye!");
     }
 }
