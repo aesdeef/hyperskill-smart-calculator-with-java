@@ -1,6 +1,5 @@
 package calculator;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Scanner;
 import java.util.regex.Matcher;
@@ -11,26 +10,15 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
         Calculator calculator = new Calculator();
 
-        mainLoop:
         while (true) {
             String input = scanner.nextLine().trim();
             if (input.isEmpty()) {
                 continue;
             }
+
             // CHECK PARENTHESES
-            int openCount = 0;
-            for (char c : input.toCharArray()) {
-                if (c == '(') {
-                    openCount++;
-                } else if (c == ')') {
-                    if (openCount == 0) {
-                        System.out.println("Invalid expression");
-                        continue mainLoop;
-                    }
-                    openCount--;
-                }
-            }
-            if (openCount != 0) {
+            boolean valid = checkParentheses(input);
+            if (!valid) {
                 System.out.println("Invalid expression");
                 continue;
             }
@@ -44,103 +32,56 @@ public class Main {
                 continue;
             }
 
-            input = input
-                    .replaceAll("=", " = ")
-                    .replaceAll("\\+", " + ")
-                    .replaceAll("-", " - ")
-                    // .replaceAll("\\*", " * ")
-                    // .replaceAll("/", " / ")
-                    // .replaceAll("\\^", " ^ ")
-                    .replaceAll("\\(", " ( ")
-                    .replaceAll("\\)", " ) ")
-                    .trim();
-            String[] tokens = input.split("\\s+");
-            ArrayList<TokenType> tokenTypes = Main.classifyTokens(tokens);
-
-            // HANDLING UNKNOWN TOKENS
-            if (tokenTypes.contains(TokenType.UNKNOWN)) {
-                String errorMessage = null;
-                for (TokenType tokenType : tokenTypes) {
-                    switch (tokenType) {
-                        case UNKNOWN -> errorMessage = "Invalid identifier";
-                        case EQUALS -> errorMessage = "Invalid assignment";
-                    }
-                    if (errorMessage != null) {
-                        break;
-                    }
-                }
-                System.out.println(errorMessage);
-                continue;
-            }
-
             // HANDLING MULTIPLE EQUALS
-            if (tokenTypes.stream().filter(token -> token == TokenType.EQUALS).count() > 1) {
+            Matcher multipleEqualsMatcher = Pattern.compile("=.*=").matcher(input);
+            if (multipleEqualsMatcher.find()) {
                 System.out.println("Invalid assignment");
                 continue;
             }
 
-            // VALUE RETRIEVAL
-            if (tokens.length == 1 && tokenTypes.getFirst() == TokenType.VARIABLE) {
-                try {
-                    System.out.println(calculator.retrieve(input));
-                } catch (UnknownVariableException e) {
-                    System.out.println("Unknown variable");
-                }
-                continue;
-            }
-
-            // ECHOING A NUMBER
-            if (tokens.length == 1 && tokenTypes.getFirst() == TokenType.NUMBER) {
-                System.out.println(input);
-                continue;
-            }
 
             // VALUE ASSIGNMENT AND CALCULATION
-            Long result;
+            long result;
             try {
-                result = calculator.calculate(tokens, tokenTypes, input);
+                Matcher equalsMatcher = Pattern.compile("(?<left>[^=]*)=(?<right>[^=]*)").matcher(input);
+                if (equalsMatcher.matches()) {
+                    String left = equalsMatcher.group("left").trim();
+                    String right = equalsMatcher.group("right").trim();
+                    calculator.assign(left, right);
+                    continue;
+                }
+                result = Long.parseLong(calculator.eval(input));
             } catch (UnknownVariableException e) {
                 System.out.println("Unknown variable");
+                continue;
+            } catch (InvalidIdentifierException e) {
+                System.out.println("Invalid identifier");
                 continue;
             } catch (InvalidExpressionException e) {
                 System.out.println("Invalid expression");
                 continue;
+            } catch (InvalidAssignmentException e) {
+                System.out.println("Invalid assignment");
+                continue;
             }
 
-            if (result != null) {
-                System.out.println(result);
-            }
+            System.out.println(result);
         }
     }
 
-    private static ArrayList<TokenType> classifyTokens(String[] tokens) {
-        ArrayList<TokenType> tokenTypes = new ArrayList<>();
-        for (String token : tokens) {
-            TokenType type = TokenType.UNKNOWN;
-            if (token.matches("[A-Za-z]+")) {
-                type = TokenType.VARIABLE;
-            } else if (token.matches("[+\\-*/^=()]")) {
-                switch (token) {
-                    case "=" -> type = TokenType.EQUALS;
-                    case "+" -> type = TokenType.PLUS;
-                    case "-" -> type = TokenType.MINUS;
-                    case "*" -> type = TokenType.TIMES;
-                    case "/" -> type = TokenType.DIVIDE;
-                    case "^" -> type = TokenType.POWER;
-                    case "(" -> type = TokenType.OPEN_BRACKETS;
-                    case ")" -> type = TokenType.CLOSE_BRACKETS;
+    private static boolean checkParentheses(String input) {
+        int openCount = 0;
+        for (char c : input.toCharArray()) {
+            if (c == '(') {
+                openCount++;
+            } else if (c == ')') {
+                if (openCount == 0) {
+                    return false;
                 }
-            } else {
-                try {
-                    Integer.parseInt(token);
-                    type = TokenType.NUMBER;
-                } catch (NumberFormatException e) {
-                    // ignore
-                }
+                openCount--;
             }
-            tokenTypes.add(type);
         }
-        return tokenTypes;
+        return openCount == 0;
     }
 
     private static boolean handleCommand(String input) {
@@ -166,6 +107,7 @@ class Calculator {
     static Pattern multiply = Pattern.compile("(?<value1>-?\\d+)\\s*(?<operator>[*/])\\s*(?<value2>-?\\d+)");
     static Pattern add = Pattern.compile("(?<value1>-?\\d+)\\s*(?<operator>[+-])\\s*(?<value2>-?\\d+)");
     static Pattern variable = Pattern.compile("[a-z]+");
+    static Pattern invalidToken = Pattern.compile("[a-z][0-9]|[0-9][a-z]|[*/]{2,}");
 
     Calculator() {
         this.store = new HashMap<>();
@@ -178,8 +120,13 @@ class Calculator {
         throw new UnknownVariableException("Unknown variable: " + key);
     }
 
-    private String eval(String input) throws UnknownVariableException, InvalidExpressionException {
-        Matcher matcher = removeSpacesAfterPlusesAndMinuses.matcher(input);
+    String eval(String input) throws UnknownVariableException, InvalidExpressionException {
+        Matcher matcher = invalidToken.matcher(input);
+        if (matcher.find()) {
+            throw new InvalidExpressionException("Invalid expression: " + input);
+        }
+
+        matcher = removeSpacesAfterPlusesAndMinuses.matcher(input);
         if (matcher.find()) {
             return eval(input.replace(matcher.group(), matcher.group("operator")));
         }
@@ -249,73 +196,18 @@ class Calculator {
         return input;
     }
 
-    public Long calculate(String[] tokens, ArrayList<TokenType> tokenTypes, String input) throws InvalidExpressionException, UnknownVariableException {
-        boolean assignment = false;
-        long result = 0;
-        if (tokens.length >= 3
-                && tokenTypes.getFirst() == TokenType.VARIABLE
-                && tokenTypes.get(1) == TokenType.EQUALS
-        ) {
-            assignment = true;
-            int equals = input.indexOf('=');
-            long value = Long.parseLong(this.eval(input.substring(equals + 1).trim()));
-            this.store.put(tokens[0], (int) value);
-            return null;
+    public void assign(String left, String right) throws InvalidIdentifierException, InvalidExpressionException, UnknownVariableException, InvalidAssignmentException {
+        if (!variable.matcher(left).matches()) {
+            throw new InvalidIdentifierException(left);
         }
-        return Long.parseLong(this.eval(input));
-
-        /*
-        TokenType currentOperator = TokenType.PLUS;
-        for (int i = assignment ? 2 : 0; i < tokens.length; i++) {
-            Integer toAdd = null;
-            switch (tokenTypes.get(i)) {
-                case NUMBER -> toAdd = Integer.parseInt(tokens[i]);
-                case VARIABLE -> toAdd = this.retrieve(tokens[i]);
-                case PLUS -> {
-                    if (currentOperator == null) {
-                        currentOperator = TokenType.PLUS;
-                    }
-                }
-                case MINUS -> {
-                    if (currentOperator == TokenType.MINUS) {
-                        currentOperator = TokenType.PLUS;
-                    } else {
-                        currentOperator = TokenType.MINUS;
-                    }
-                }
-                default -> throw new InvalidExpressionException("");
-            }
-
-            if (toAdd != null) {
-                switch (currentOperator) {
-                    case PLUS -> result += toAdd;
-                    case MINUS -> result -= toAdd;
-                    case null, default -> throw new InvalidExpressionException("");
-                }
-                currentOperator = null;
-            }
+        long rightValue;
+        try {
+            rightValue = Long.parseLong(this.eval(right));
+        } catch (InvalidExpressionException e) {
+            throw new InvalidAssignmentException(e.getMessage());
         }
-
-        if (assignment) {
-            this.store.put(tokens[0], (int) result);
-            return null;
-        }
-        return result;
-         */
+        this.store.put(left, (int) rightValue);
     }
-}
-
-enum TokenType {
-    COMMAND,
-    VARIABLE,
-    PLUS,
-    MINUS,
-    TIMES,
-    DIVIDE,
-    POWER,
-    EQUALS,
-    NUMBER,
-    OPEN_BRACKETS, CLOSE_BRACKETS, UNKNOWN
 }
 
 class UnknownVariableException extends Exception {
@@ -324,8 +216,20 @@ class UnknownVariableException extends Exception {
     }
 }
 
+class InvalidIdentifierException extends Exception {
+    InvalidIdentifierException(String message) {
+        super(message);
+    }
+}
+
 class InvalidExpressionException extends Exception {
     public InvalidExpressionException(String message) {
+        super(message);
+    }
+}
+
+class InvalidAssignmentException extends Throwable {
+    public InvalidAssignmentException(String message) {
         super(message);
     }
 }
