@@ -2,6 +2,7 @@ package calculator;
 
 import java.util.HashMap;
 import java.util.Scanner;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -16,220 +17,208 @@ public class Main {
                 continue;
             }
 
-            // CHECK PARENTHESES
-            boolean valid = checkParentheses(input);
-            if (!valid) {
-                System.out.println("Invalid expression");
-                continue;
-            }
-
-            // COMMAND
             if (input.charAt(0) == '/') {
-                boolean exit = Main.handleCommand(input);
-                if (exit) {
-                    break;
+                switch (input) {
+                    case "/help" -> System.out.println("The program calculates the sum of numbers");
+                    case "/exit" -> {
+                        System.out.println("Bye!");
+                        System.exit(0);
+                    }
+                    default -> System.out.println("Unknown command");
                 }
                 continue;
             }
 
-            // HANDLING MULTIPLE EQUALS
-            Matcher multipleEqualsMatcher = Pattern.compile("=.*=").matcher(input);
-            if (multipleEqualsMatcher.find()) {
-                System.out.println("Invalid assignment");
-                continue;
-            }
-
-
-            // VALUE ASSIGNMENT AND CALCULATION
-            long result;
             try {
-                Matcher equalsMatcher = Pattern.compile("(?<left>[^=]*)=(?<right>[^=]*)").matcher(input);
-                if (equalsMatcher.matches()) {
-                    String left = equalsMatcher.group("left").trim();
-                    String right = equalsMatcher.group("right").trim();
-                    calculator.assign(left, right);
-                    continue;
-                }
-                result = Long.parseLong(calculator.eval(input));
-            } catch (UnknownVariableException e) {
-                System.out.println("Unknown variable");
-                continue;
-            } catch (InvalidIdentifierException e) {
-                System.out.println("Invalid identifier");
-                continue;
-            } catch (InvalidExpressionException e) {
-                System.out.println("Invalid expression");
-                continue;
-            } catch (InvalidAssignmentException e) {
-                System.out.println("Invalid assignment");
-                continue;
-            }
-
-            System.out.println(result);
-        }
-    }
-
-    private static boolean checkParentheses(String input) {
-        int openCount = 0;
-        for (char c : input.toCharArray()) {
-            if (c == '(') {
-                openCount++;
-            } else if (c == ')') {
-                if (openCount == 0) {
-                    return false;
-                }
-                openCount--;
+                calculator.process(input);
+            } catch (CalculatorException e) {
+                System.out.println(e.getMessage());
             }
         }
-        return openCount == 0;
     }
-
-    private static boolean handleCommand(String input) {
-        switch (input) {
-            case "/help" -> System.out.println("The program calculates the sum of numbers");
-            case "/exit" -> {
-                System.out.println("Bye!");
-                return true;
-            }
-            default -> System.out.println("Unknown command");
-        }
-        return false;
-    }
-
 }
 
 class Calculator {
     HashMap<String, Integer> store;
-    static Pattern removeSpacesAfterPlusesAndMinuses = Pattern.compile("(?<operator>[+-])\\s+");
-    static Pattern consecutivePlusMinus = Pattern.compile("\\s*(?<first>[+-])\\s*(?<second>[+-])\\s*");
+    static Pattern assignment = Pattern.compile("(?<left>[^=]*)=(?<right>[^=]*)");
+    static Pattern variable = Pattern.compile("[a-z]+");
+    static Pattern invalidToken = Pattern.compile("[a-z][0-9]|[0-9][a-z]|[*/]{2,}");
+    static Pattern longPlus = Pattern.compile("\\+{2,}|(--)+");
+    static Pattern plusMinus = Pattern.compile("\\+-");
     static Pattern brackets = Pattern.compile("\\((?<contents>[^)]*)\\)");
     static Pattern power = Pattern.compile("(?<base>\\d+)\\s*\\^\\s*(?<exponent>\\d+)");
     static Pattern multiply = Pattern.compile("(?<value1>-?\\d+)\\s*(?<operator>[*/])\\s*(?<value2>-?\\d+)");
     static Pattern add = Pattern.compile("(?<value1>-?\\d+)\\s*(?<operator>[+-])\\s*(?<value2>-?\\d+)");
-    static Pattern variable = Pattern.compile("[a-z]+");
-    static Pattern invalidToken = Pattern.compile("[a-z][0-9]|[0-9][a-z]|[*/]{2,}");
 
     Calculator() {
         this.store = new HashMap<>();
     }
 
-    public Integer retrieve(String key) throws UnknownVariableException {
-        if (this.store.containsKey(key)) {
-            return this.store.get(key);
+    public void process(String input) throws InvalidExpressionException, InvalidAssignmentException, UnknownVariableException, InvalidIdentifierException {
+        this.validateInput(input);
+        Matcher matcher = assignment.matcher(input);
+        if (matcher.matches()) {
+            String left = matcher.group("left").trim();
+            String right = matcher.group("right").trim();
+            this.assign(left, right);
+        } else {
+            System.out.println(this.eval(input));
         }
-        throw new UnknownVariableException("Unknown variable: " + key);
     }
 
-    String eval(String input) throws UnknownVariableException, InvalidExpressionException {
-        Matcher matcher = invalidToken.matcher(input);
-        if (matcher.find()) {
-            throw new InvalidExpressionException("Invalid expression: " + input);
+    private void validateInput(String input) throws InvalidAssignmentException, InvalidExpressionException {
+        // CHECK PARENTHESES
+        boolean valid = checkParentheses(input);
+        if (!valid) {
+            throw new InvalidExpressionException();
         }
 
-        matcher = removeSpacesAfterPlusesAndMinuses.matcher(input);
-        if (matcher.find()) {
-            return eval(input.replace(matcher.group(), matcher.group("operator")));
+        // HANDLING MULTIPLE EQUALS
+        Matcher multipleEqualsMatcher = Pattern.compile("=.*=").matcher(input);
+        if (multipleEqualsMatcher.find()) {
+            throw new InvalidAssignmentException();
         }
-
-        matcher = consecutivePlusMinus.matcher(input);
-        if (matcher.find()) {
-            String first = matcher.group("first");
-            String second = matcher.group("second");
-            if (first.equals(second)) {
-                return eval(input.replace(matcher.group(), "+"));
-            } else {
-                return eval(input.replace(matcher.group(), "-"));
-            }
-        }
-
-        Matcher variableMatcher = variable.matcher(input);
-        if (variableMatcher.find()) {
-            String value = this.retrieve(variableMatcher.group()).toString();
-            return eval(input.replace(variableMatcher.group(), value));
-        }
-
-        Matcher bracketsMatcher = brackets.matcher(input);
-        if (bracketsMatcher.find()) {
-            String value = eval(bracketsMatcher.group("contents").trim());
-            return eval(input.replace(bracketsMatcher.group(), value));
-        }
-
-        Matcher powerMatcher = power.matcher(input);
-        if (powerMatcher.find()) {
-            long base = Long.parseLong(powerMatcher.group("base").trim());
-            long exponent = Long.parseLong(powerMatcher.group("exponent").trim());
-            long value = 1;
-            for (long i = 0; i < exponent; i++) {
-                value *= base;
-            }
-            return eval(input.replace(powerMatcher.group(), Long.toString(value)));
-        }
-
-        Matcher multiplyMatcher = multiply.matcher(input);
-        if (multiplyMatcher.find()) {
-            long value1 = Long.parseLong(multiplyMatcher.group("value1").trim());
-            long value2 = Long.parseLong(multiplyMatcher.group("value2").trim());
-            String operator = multiplyMatcher.group("operator").trim();
-            long result;
-            switch (operator) {
-                case "*" -> result = value1 * value2;
-                case "/" -> result = value1 / value2;
-                default -> throw new InvalidExpressionException("");
-            }
-            return eval(input.replace(multiplyMatcher.group(), Long.toString(result)));
-        }
-
-        Matcher addMatcher = add.matcher(input);
-        if (addMatcher.find()) {
-            long value1 = Long.parseLong(addMatcher.group("value1").trim());
-            long value2 = Long.parseLong(addMatcher.group("value2").trim());
-            String operator = addMatcher.group("operator").trim();
-            long result;
-            switch (operator) {
-                case "+" -> result = value1 + value2;
-                case "-" -> result = value1 - value2;
-                default -> throw new InvalidExpressionException("");
-            }
-            return eval(input.replace(addMatcher.group(), Long.toString(result)));
-        }
-
-        return input;
     }
 
-    public void assign(String left, String right) throws InvalidIdentifierException, InvalidExpressionException, UnknownVariableException, InvalidAssignmentException {
+    private void assign(String left, String right) throws InvalidIdentifierException, UnknownVariableException, InvalidAssignmentException {
         if (!variable.matcher(left).matches()) {
-            throw new InvalidIdentifierException(left);
+            throw new InvalidIdentifierException();
         }
         long rightValue;
         try {
             rightValue = Long.parseLong(this.eval(right));
         } catch (InvalidExpressionException e) {
-            throw new InvalidAssignmentException(e.getMessage());
+            throw new InvalidAssignmentException();
         }
         this.store.put(left, (int) rightValue);
     }
+
+    private String eval(String input) throws UnknownVariableException, InvalidExpressionException {
+        input = this.prepareInput(input);
+        Matcher matcher;
+
+        matcher = brackets.matcher(input);
+        if (matcher.find()) {
+            String value = eval(matcher.group("contents").trim());
+            return eval(input.replace(matcher.group(), value));
+        }
+
+        matcher = power.matcher(input);
+        while (matcher.find()) {
+            long base = Long.parseLong(matcher.group("base").trim());
+            long exponent = Long.parseLong(matcher.group("exponent").trim());
+            long value = 1;
+            for (long i = 0; i < exponent; i++) {
+                value *= base;
+            }
+            input = eval(input.replace(matcher.group(), Long.toString(value)));
+            matcher = power.matcher(input);
+        }
+
+        matcher = multiply.matcher(input);
+        while (matcher.find()) {
+            long value1 = Long.parseLong(matcher.group("value1").trim());
+            long value2 = Long.parseLong(matcher.group("value2").trim());
+            String operator = matcher.group("operator").trim();
+            long result;
+            switch (operator) {
+                case "*" -> result = value1 * value2;
+                case "/" -> result = value1 / value2;
+                default -> throw new InvalidExpressionException();
+            }
+            input = eval(input.replace(matcher.group(), Long.toString(result)));
+            matcher = multiply.matcher(input);
+        }
+
+        matcher = add.matcher(input);
+        while (matcher.find()) {
+            long value1 = Long.parseLong(matcher.group("value1").trim());
+            long value2 = Long.parseLong(matcher.group("value2").trim());
+            String operator = matcher.group("operator").trim();
+            long result;
+            switch (operator) {
+                case "+" -> result = value1 + value2;
+                case "-" -> result = value1 - value2;
+                default -> throw new InvalidExpressionException();
+            }
+            input = eval(input.replace(matcher.group(), Long.toString(result)));
+            matcher = add.matcher(input);
+        }
+
+        return input;
+    }
+
+    private String prepareInput(String input) throws UnknownVariableException {
+        input = this.replaceAll(input, invalidToken, (match) -> {throw new InvalidExpressionException();});
+        input = this.replaceAll(input, longPlus, "+");
+        input = this.replaceAll(input, plusMinus, "-");
+        input = this.replaceAll(input, variable, (match) -> this.retrieve(match).toString());
+
+        return input;
+    }
+
+    private String replaceAll(String input, Pattern pattern, String replacement) {
+        return this.replaceAll(input, pattern, (match) -> replacement);
+    }
+
+    private String replaceAll(String input, Pattern pattern, UnaryOperator<String> operator) {
+        Matcher matcher = pattern.matcher(input);
+        while (matcher.find()) {
+            String match = matcher.group();
+            input = input.replace(match, operator.apply(match));
+            matcher = pattern.matcher(input);
+        }
+        return input;
+    }
+
+    private Integer retrieve(String key) throws UnknownVariableException {
+        if (this.store.containsKey(key)) {
+            return this.store.get(key);
+        }
+        throw new UnknownVariableException();
+    }
+
+    private static boolean checkParentheses(String input) {
+        int openCount = 0;
+        for (char c : input.toCharArray()) {
+            switch (c) {
+                case '(' -> openCount++;
+                case ')' -> openCount--;
+            }
+            if (openCount < 0) {
+                return false;
+            }
+        }
+        return openCount == 0;
+    }
 }
 
-class UnknownVariableException extends Exception {
-    UnknownVariableException(String message) {
+class CalculatorException extends RuntimeException {
+    CalculatorException(String message) {
         super(message);
     }
 }
 
-class InvalidIdentifierException extends Exception {
-    InvalidIdentifierException(String message) {
-        super(message);
+class UnknownVariableException extends CalculatorException {
+    UnknownVariableException() {
+        super("Unknown variable");
     }
 }
 
-class InvalidExpressionException extends Exception {
-    public InvalidExpressionException(String message) {
-        super(message);
+class InvalidIdentifierException extends CalculatorException {
+    InvalidIdentifierException() {
+        super("Invalid identifier");
     }
 }
 
-class InvalidAssignmentException extends Throwable {
-    public InvalidAssignmentException(String message) {
-        super(message);
+class InvalidExpressionException extends CalculatorException {
+    InvalidExpressionException() {
+        super("Invalid expression");
+    }
+}
+
+class InvalidAssignmentException extends CalculatorException {
+    InvalidAssignmentException() {
+        super("Invalid assignment");
     }
 }
