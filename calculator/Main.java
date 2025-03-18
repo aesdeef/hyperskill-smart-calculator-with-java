@@ -1,5 +1,6 @@
 package calculator;
 
+import java.math.BigInteger;
 import java.util.HashMap;
 import java.util.Scanner;
 import java.util.function.UnaryOperator;
@@ -39,7 +40,7 @@ public class Main {
 }
 
 class Calculator {
-    HashMap<String, Integer> store;
+    HashMap<String, BigInteger> store;
     static Pattern assignment = Pattern.compile("(?<left>[^=]*)=(?<right>[^=]*)");
     static Pattern variable = Pattern.compile("[a-z]+");
     static Pattern invalidToken = Pattern.compile("[a-z][0-9]|[0-9][a-z]|[*/]{2,}");
@@ -84,13 +85,13 @@ class Calculator {
         if (!variable.matcher(left).matches()) {
             throw new InvalidIdentifierException();
         }
-        long rightValue;
+        BigInteger rightValue;
         try {
-            rightValue = Long.parseLong(this.eval(right));
+            rightValue = new BigInteger(this.eval(right));
         } catch (InvalidExpressionException e) {
             throw new InvalidAssignmentException();
         }
-        this.store.put(left, (int) rightValue);
+        this.store.put(left, rightValue);
     }
 
     private String eval(String input) throws UnknownVariableException, InvalidExpressionException {
@@ -105,43 +106,40 @@ class Calculator {
 
         matcher = power.matcher(input);
         while (matcher.find()) {
-            long base = Long.parseLong(matcher.group("base").trim());
-            long exponent = Long.parseLong(matcher.group("exponent").trim());
-            long value = 1;
-            for (long i = 0; i < exponent; i++) {
-                value *= base;
-            }
-            input = eval(input.replace(matcher.group(), Long.toString(value)));
+            BigInteger base = new BigInteger(matcher.group("base").trim());
+            int exponent = Integer.parseInt(matcher.group("exponent").trim());
+            BigInteger value = base.pow(exponent);
+            input = eval(input.replace(matcher.group(), value.toString()));
             matcher = power.matcher(input);
         }
 
         matcher = multiply.matcher(input);
         while (matcher.find()) {
-            long value1 = Long.parseLong(matcher.group("value1").trim());
-            long value2 = Long.parseLong(matcher.group("value2").trim());
+            BigInteger value1 = new BigInteger(matcher.group("value1").trim());
+            BigInteger value2 = new BigInteger(matcher.group("value2").trim());
             String operator = matcher.group("operator").trim();
-            long result;
+            BigInteger result;
             switch (operator) {
-                case "*" -> result = value1 * value2;
-                case "/" -> result = value1 / value2;
+                case "*" -> result = value1.multiply(value2);
+                case "/" -> result = value1.divide(value2);
                 default -> throw new InvalidExpressionException();
             }
-            input = eval(input.replace(matcher.group(), Long.toString(result)));
+            input = eval(input.replace(matcher.group(), result.toString()));
             matcher = multiply.matcher(input);
         }
 
         matcher = add.matcher(input);
         while (matcher.find()) {
-            long value1 = Long.parseLong(matcher.group("value1").trim());
-            long value2 = Long.parseLong(matcher.group("value2").trim());
+            BigInteger value1 = new BigInteger(matcher.group("value1").trim());
+            BigInteger value2 = new BigInteger(matcher.group("value2").trim());
             String operator = matcher.group("operator").trim();
-            long result;
+            BigInteger result;
             switch (operator) {
-                case "+" -> result = value1 + value2;
-                case "-" -> result = value1 - value2;
+                case "+" -> result = value1.add(value2);
+                case "-" -> result = value1.subtract(value2);
                 default -> throw new InvalidExpressionException();
             }
-            input = eval(input.replace(matcher.group(), Long.toString(result)));
+            input = eval(input.replace(matcher.group(), result.toString()));
             matcher = add.matcher(input);
         }
 
@@ -171,7 +169,7 @@ class Calculator {
         return input;
     }
 
-    private Integer retrieve(String key) throws UnknownVariableException {
+    private BigInteger retrieve(String key) throws UnknownVariableException {
         if (this.store.containsKey(key)) {
             return this.store.get(key);
         }
